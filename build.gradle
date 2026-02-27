@@ -39,6 +39,42 @@ dependencies {
     modCompileOnly "dev.isxander:yet-another-config-lib:${project.yacl_version}"
 }
 
+// Generate BuildInfo.java with git branch and build timestamp
+def generatedSrcDir = layout.buildDirectory.dir('generated/sources/buildinfo')
+
+tasks.register('generateBuildInfo') {
+    def outputDir = generatedSrcDir
+    outputs.dir(outputDir)
+    doLast {
+        def branch = 'unknown'
+        try {
+            def proc = ['git', 'rev-parse', '--abbrev-ref', 'HEAD'].execute()
+            proc.waitFor()
+            if (proc.exitValue() == 0) {
+                branch = proc.text.trim()
+            }
+        } catch (Exception ignored) {}
+
+        def buildTime = new Date().format("yyyy-MM-dd HH:mm:ss")
+
+        def pkgDir = outputDir.get().asFile.toPath().resolve('sxy/baritoneextras')
+        pkgDir.toFile().mkdirs()
+
+        pkgDir.resolve('BuildInfo.java').toFile().text = """\
+package sxy.baritoneextras;
+
+public final class BuildInfo {
+    public static final String GIT_BRANCH = "${branch}";
+    public static final String BUILD_TIME = "${buildTime}";
+    private BuildInfo() {}
+}
+"""
+    }
+}
+
+sourceSets.main.java.srcDir(generatedSrcDir)
+tasks.named('compileJava') { dependsOn('generateBuildInfo') }
+
 processResources {
     inputs.property "version", project.version
 
@@ -58,6 +94,8 @@ java {
     sourceCompatibility = JavaVersion.VERSION_21
     targetCompatibility = JavaVersion.VERSION_21
 }
+
+tasks.named('sourcesJar') { dependsOn('generateBuildInfo') }
 
 jar {
     from("LICENSE") {

@@ -1,4 +1,4 @@
-package sxy.baritoneextras.torchplacer;
+package sxy.baritoneextras.autoeater;
 
 import java.io.IOException;
 import java.io.InputStream;
@@ -7,15 +7,16 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.Properties;
 
-public final class TorchPlacerConfig {
+public final class AutoEaterConfig {
 
     private static final Path CONFIG_PATH = Path.of("config", "sxy-baritone-extras.properties");
+    private static final String PREFIX = "autoeater.";
 
     public boolean enabled = true;
-    public int lightLevelThreshold = 4;
-    public TorchPlacementSide placementSide = TorchPlacementSide.RIGHT;
-    public int minSpacing = 8;
-    public int safetyMargin = 2;
+    public int hungerThreshold = 20;
+    public FoodPriority foodPriority = FoodPriority.SATURATION;
+    public boolean allowGoldenApples = false;
+    public boolean eatWhileWalking = true;
 
     public void load() {
         if (!Files.exists(CONFIG_PATH)) {
@@ -29,15 +30,15 @@ public final class TorchPlacerConfig {
             e.printStackTrace();
             return;
         }
-        enabled = Boolean.parseBoolean(props.getProperty("enabled", "true"));
-        lightLevelThreshold = parseInt(props.getProperty("lightLevelThreshold"), 4);
-        minSpacing = parseInt(props.getProperty("minSpacing"), 8);
-        safetyMargin = parseInt(props.getProperty("safetyMargin"), 2);
+        enabled = Boolean.parseBoolean(props.getProperty(PREFIX + "enabled", "true"));
+        hungerThreshold = parseInt(props.getProperty(PREFIX + "hungerThreshold"), 20);
+        allowGoldenApples = Boolean.parseBoolean(props.getProperty(PREFIX + "allowGoldenApples", "false"));
+        eatWhileWalking = Boolean.parseBoolean(props.getProperty(PREFIX + "eatWhileWalking", "true"));
         try {
-            placementSide = TorchPlacementSide.valueOf(
-                    props.getProperty("placementSide", "RIGHT").toUpperCase());
+            foodPriority = FoodPriority.valueOf(
+                    props.getProperty(PREFIX + "foodPriority", "SATURATION").toUpperCase());
         } catch (IllegalArgumentException e) {
-            placementSide = TorchPlacementSide.RIGHT;
+            foodPriority = FoodPriority.SATURATION;
         }
     }
 
@@ -51,11 +52,11 @@ public final class TorchPlacerConfig {
                 e.printStackTrace();
             }
         }
-        props.setProperty("enabled", String.valueOf(enabled));
-        props.setProperty("lightLevelThreshold", String.valueOf(lightLevelThreshold));
-        props.setProperty("placementSide", placementSide.name());
-        props.setProperty("minSpacing", String.valueOf(minSpacing));
-        props.setProperty("safetyMargin", String.valueOf(safetyMargin));
+        props.setProperty(PREFIX + "enabled", String.valueOf(enabled));
+        props.setProperty(PREFIX + "hungerThreshold", String.valueOf(hungerThreshold));
+        props.setProperty(PREFIX + "foodPriority", foodPriority.name());
+        props.setProperty(PREFIX + "allowGoldenApples", String.valueOf(allowGoldenApples));
+        props.setProperty(PREFIX + "eatWhileWalking", String.valueOf(eatWhileWalking));
         try {
             Files.createDirectories(CONFIG_PATH.getParent());
             try (OutputStream out = Files.newOutputStream(CONFIG_PATH)) {

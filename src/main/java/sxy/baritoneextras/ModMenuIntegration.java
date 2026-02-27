@@ -3,12 +3,16 @@ package sxy.baritoneextras;
 import com.terraformersmc.modmenu.api.ConfigScreenFactory;
 import com.terraformersmc.modmenu.api.ModMenuApi;
 import dev.isxander.yacl3.api.ConfigCategory;
+import dev.isxander.yacl3.api.LabelOption;
 import dev.isxander.yacl3.api.Option;
 import dev.isxander.yacl3.api.OptionDescription;
+import dev.isxander.yacl3.api.OptionGroup;
 import dev.isxander.yacl3.api.YetAnotherConfigLib;
 import dev.isxander.yacl3.api.controller.TickBoxControllerBuilder;
 import net.fabricmc.loader.api.FabricLoader;
 import net.minecraft.network.chat.Component;
+import sxy.baritoneextras.autoeater.AutoEaterConfig;
+import sxy.baritoneextras.autoeater.AutoEaterConfigScreen;
 import sxy.baritoneextras.mobavoidance.MobAvoidanceConfig;
 import sxy.baritoneextras.mobavoidance.MobAvoidanceConfigScreen;
 import sxy.baritoneextras.torchplacer.TorchPlacerConfig;
@@ -29,6 +33,16 @@ public class ModMenuIntegration implements ModMenuApi {
                         .controller(TickBoxControllerBuilder::create)
                         .build())
 
+                .group(OptionGroup.createBuilder()
+                        .name(Component.literal("Build Info"))
+                        .description(OptionDescription.of(
+                                Component.literal("Build metadata for debugging")))
+                        .option(LabelOption.create(
+                                Component.literal("Git Branch: " + BuildInfo.GIT_BRANCH)))
+                        .option(LabelOption.create(
+                                Component.literal("Build Time: " + BuildInfo.BUILD_TIME)))
+                        .build())
+
                 .build();
     }
 
@@ -41,16 +55,19 @@ public class ModMenuIntegration implements ModMenuApi {
 
             GeneralConfig generalConfig = BaritoneExtras.getGeneralConfig();
             TorchPlacerConfig torchConfig = BaritoneExtras.getConfig();
+            AutoEaterConfig eaterConfig = BaritoneExtras.getAutoEaterConfig();
             MobAvoidanceConfig mobConfig = BaritoneExtras.getMobAvoidanceConfig();
 
             return YetAnotherConfigLib.createBuilder()
                     .title(Component.literal("SXY Baritone Extras Configuration"))
                     .category(createGeneralCategory(generalConfig))
                     .category(TorchPlacerConfigScreen.createCategory(torchConfig))
+                    .category(AutoEaterConfigScreen.createCategory(eaterConfig))
                     .category(MobAvoidanceConfigScreen.createCategory(mobConfig))
                     .save(() -> {
                         generalConfig.save();
                         torchConfig.save();
+                        eaterConfig.save();
                         mobConfig.save();
                     })
                     .build()

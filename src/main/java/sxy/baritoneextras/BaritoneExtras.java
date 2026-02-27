@@ -5,6 +5,9 @@ import baritone.api.IBaritone;
 import net.fabricmc.api.ClientModInitializer;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import sxy.baritoneextras.autoeater.AutoEaterCommand;
+import sxy.baritoneextras.autoeater.AutoEaterConfig;
+import sxy.baritoneextras.autoeater.AutoEaterProcess;
 import sxy.baritoneextras.mobavoidance.MobAvoidanceCommand;
 import sxy.baritoneextras.mobavoidance.MobAvoidanceConfig;
 import sxy.baritoneextras.mobavoidance.MobAvoidanceProcess;
@@ -17,7 +20,8 @@ public class BaritoneExtras implements ClientModInitializer {
     private static final Logger LOGGER = LoggerFactory.getLogger("sxy-baritone-extras");
 
     private static GeneralConfig generalConfig;
-    private static TorchPlacerConfig config;
+    private static TorchPlacerConfig torchPlacerConfig;
+    private static AutoEaterConfig autoEaterConfig;
     private static MobAvoidanceConfig mobAvoidanceConfig;
 
     public static GeneralConfig getGeneralConfig() {
@@ -25,7 +29,11 @@ public class BaritoneExtras implements ClientModInitializer {
     }
 
     public static TorchPlacerConfig getConfig() {
-        return config;
+        return torchPlacerConfig;
+    }
+
+    public static AutoEaterConfig getAutoEaterConfig() {
+        return autoEaterConfig;
     }
 
     public static MobAvoidanceConfig getMobAvoidanceConfig() {
@@ -43,19 +51,28 @@ public class BaritoneExtras implements ClientModInitializer {
         generalConfig = new GeneralConfig();
         generalConfig.load();
 
-        config = new TorchPlacerConfig();
-        config.load();
+        torchPlacerConfig = new TorchPlacerConfig();
+        torchPlacerConfig.load();
 
-        IBaritone baritone = BaritoneAPI.getProvider().getPrimaryBaritone();
-
-        TorchPlacerProcess process = new TorchPlacerProcess(baritone, config);
-        baritone.getPathingControlManager().registerProcess(process);
-
-        TorchPlacerCommand command = new TorchPlacerCommand(baritone, config);
-        baritone.getCommandManager().getRegistry().register(command);
+        autoEaterConfig = new AutoEaterConfig();
+        autoEaterConfig.load();
 
         mobAvoidanceConfig = new MobAvoidanceConfig();
         mobAvoidanceConfig.load();
+
+        IBaritone baritone = BaritoneAPI.getProvider().getPrimaryBaritone();
+
+        TorchPlacerProcess torchProcess = new TorchPlacerProcess(baritone, torchPlacerConfig);
+        baritone.getPathingControlManager().registerProcess(torchProcess);
+
+        TorchPlacerCommand torchCommand = new TorchPlacerCommand(baritone, torchPlacerConfig);
+        baritone.getCommandManager().getRegistry().register(torchCommand);
+
+        AutoEaterProcess eaterProcess = new AutoEaterProcess(baritone, autoEaterConfig);
+        baritone.getPathingControlManager().registerProcess(eaterProcess);
+
+        AutoEaterCommand eaterCommand = new AutoEaterCommand(baritone, autoEaterConfig);
+        baritone.getCommandManager().getRegistry().register(eaterCommand);
 
         MobAvoidanceProcess mobProcess = new MobAvoidanceProcess(baritone, mobAvoidanceConfig);
         baritone.getPathingControlManager().registerProcess(mobProcess);
