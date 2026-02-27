@@ -19,6 +19,8 @@ import net.minecraft.world.entity.LivingEntity;
 import net.minecraft.world.entity.monster.Creeper;
 import net.minecraft.world.entity.monster.EnderMan;
 import net.minecraft.world.entity.monster.Monster;
+import net.minecraft.tags.ItemTags;
+import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.level.ClipContext;
 import net.minecraft.world.level.LightLayer;
 import net.minecraft.world.level.block.state.BlockState;
@@ -37,8 +39,8 @@ public final class MobAvoidanceProcess implements IBaritoneProcess {
 
     private enum State { IDLE, ASSESSING, FLEEING, ENGAGING, SEEKING_COVER }
 
-    private static final int ATTACK_COOLDOWN_TICKS = 10;
-    private static final int MAX_FAILED_SWINGS = 3;
+    private static final int MAX_FAILED_SWINGS = 6;
+    private static final int DAMAGE_CHECK_DELAY = 3;
     private static final int COVER_SEARCH_RADIUS = 8;
     private static final double ENGAGE_REACH = 3.0;
     private static final double SPRINT_REACH = 6.0;
@@ -58,7 +60,8 @@ public final class MobAvoidanceProcess implements IBaritoneProcess {
     private Entity engageTarget;
     private float engageTargetLastHealth;
     private int swingsSinceLastDamage;
-    private int attackCooldown;
+    private int ticksSinceSwing;
+    private int previousSlot = -1;
 
     // Flee state
     private Goal savedGoal;
@@ -229,7 +232,6 @@ public final class MobAvoidanceProcess implements IBaritoneProcess {
                     engageTarget = closest.entity;
                     engageTargetLastHealth = (engageTarget instanceof LivingEntity le) ? le.getHealth() : 0;
                     swingsSinceLastDamage = 0;
-                    attackCooldown = 0;
                     state = State.ENGAGING;
                     ticksInState = 0;
                     Helper.HELPER.logDirect("Mob Avoidance: Engaging " + closest.type.name());
@@ -364,6 +366,8 @@ public final class MobAvoidanceProcess implements IBaritoneProcess {
             engageGoalSet = false;
             activeScanCooldown = 0;
             baritone.getInputOverrideHandler().clearAllKeys();
+            equipBestWeapon();
+            ticksSinceSwing = Integer.MAX_VALUE;
         }
 
         // Target dead or removed?
@@ -402,6 +406,20 @@ public final class MobAvoidanceProcess implements IBaritoneProcess {
             return tickFleeing();
         }
 
+        // Check damage from our last swing (delayed to allow server processing)
+        if (ticksSinceSwing == DAMAGE_CHECK_DELAY && engageTarget instanceof LivingEntity le) {
+            float currentHealth = le.getHealth();
+            if (currentHealth < engageTargetLastHealth) {
+                swingsSinceLastDamage = 0;
+            } else {
+                swingsSinceLastDamage++;
+            }
+            engageTargetLastHealth = currentHealth;
+        }
+        if (ticksSinceSwing < Integer.MAX_VALUE) {
+            ticksSinceSwing++;
+        }
+
         // Check if swings aren't doing damage (invulnerable mob)
         if (swingsSinceLastDamage >= MAX_FAILED_SWINGS) {
             Helper.HELPER.logDirect("Mob Avoidance: Target seems invulnerable. Disengaging.");
@@ -432,25 +450,13 @@ public final class MobAvoidanceProcess implements IBaritoneProcess {
             return new PathingCommand(attackGoal, cmdType);
         }
 
-        // Within attack range — swing
+        // Within attack range — swing when attack is fully charged
         baritone.getInputOverrideHandler().setInputForceState(Input.SPRINT, false);
-        attackCooldown--;
-        if (attackCooldown <= 0) {
-            baritone.getInputOverrideHandler().setInputForceState(Input.CLICK_LEFT, true);
-            attackCooldown = ATTACK_COOLDOWN_TICKS;
+        baritone.getInputOverrideHandler().setInputForceState(Input.CLICK_LEFT, false);
 
-            // Check if we did damage
-            if (engageTarget instanceof LivingEntity le) {
-                float currentHealth = le.getHealth();
-                if (currentHealth < engageTargetLastHealth) {
-                    swingsSinceLastDamage = 0;
-                } else {
-                    swingsSinceLastDamage++;
-                }
-                engageTargetLastHealth = currentHealth;
-            }
-        } else {
-            baritone.getInputOverrideHandler().setInputForceState(Input.CLICK_LEFT, false);
+        if (ctx.player().getAttackStrengthScale(0.0f) >= 1.0f) {
+            baritone.getInputOverrideHandler().setInputForceState(Input.CLICK_LEFT, true);
+            ticksSinceSwing = 0;
         }
 
         return new PathingCommand(null, PathingCommandType.REQUEST_PAUSE);
@@ -522,6 +528,41 @@ public final class MobAvoidanceProcess implements IBaritoneProcess {
                 : PathingCommandType.CANCEL_AND_SET_GOAL;
         coverGoalSet = true;
         return new PathingCommand(coverGoal, cmdType);
+    }
+
+    // ── WEAPON MANAGEMENT ─────────────────────────────────────────────────
+
+    private void equipBestWeapon() {
+        previousSlot = ctx.player().getInventory().getSelectedSlot();
+        int bestSlot = -1;
+        int bestScore = 0;
+
+        for (int i = 0; i < 9; i++) {
+            ItemStack stack = ctx.player().getInventory().getItem(i);
+            if (stack.isEmpty()) continue;
+            int score = 0;
+            if (stack.is(ItemTags.SWORDS)) {
+                score = 20;
+            } else if (stack.is(ItemTags.AXES)) {
+                score = 10;
+            }
+            if (score > bestScore) {
+                bestScore = score;
+                bestSlot = i;
+            }
+        }
+
+        if (bestSlot >= 0) {
+            ctx.player().getInventory().setSelectedSlot(bestSlot);
+            BaritoneExtras.debugLog("MobAvoidance: Equipped weapon in slot " + bestSlot);
+        }
+    }
+
+    private void restoreHeldItem() {
+        if (previousSlot >= 0 && ctx.player() != null) {
+            ctx.player().getInventory().setSelectedSlot(previousSlot);
+            previousSlot = -1;
+        }
     }
 
     // ── THREAT SCANNING ───────────────────────────────────────────────────
@@ -686,6 +727,7 @@ public final class MobAvoidanceProcess implements IBaritoneProcess {
 
     private void resetState() {
         baritone.getInputOverrideHandler().clearAllKeys();
+        restoreHeldItem();
         state = State.IDLE;
         ticksInState = 0;
         scanCooldown = 0;
@@ -693,7 +735,7 @@ public final class MobAvoidanceProcess implements IBaritoneProcess {
         engageTarget = null;
         engageTargetLastHealth = 0;
         swingsSinceLastDamage = 0;
-        attackCooldown = 0;
+        ticksSinceSwing = 0;
         coverTarget = null;
         coverFromEntity = null;
         savedGoal = null;
