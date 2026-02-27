@@ -20,6 +20,8 @@ public final class AutoEaterProcess implements IBaritoneProcess {
     private static final int EAT_TIMEOUT_TICKS = 40;
     private static final int PAUSE_REEVALUATE_INTERVAL = 10;
     private static final int LOOKAHEAD_MOVEMENTS = 4;
+    private static final int MIN_EAT_TICKS = 10;
+    private static final int COOLDOWN_TICKS = 5;
 
     private enum State { IDLE, SELECTING, EATING, FINISHING }
 
@@ -34,6 +36,7 @@ public final class AutoEaterProcess implements IBaritoneProcess {
     private boolean pausePathing;
     private boolean wasUsingItem;
     private boolean warned;
+    private int cooldownTicks;
 
     public AutoEaterProcess(IBaritone baritone, AutoEaterConfig config) {
         this.baritone = baritone;
@@ -55,6 +58,11 @@ public final class AutoEaterProcess implements IBaritoneProcess {
         // Stay active while mid-action
         if (state != State.IDLE) {
             return true;
+        }
+        // Cooldown prevents rapid re-activation after eating
+        if (cooldownTicks > 0) {
+            cooldownTicks--;
+            return false;
         }
         if (!baritone.getPathingBehavior().hasPath()) {
             return false;
@@ -121,15 +129,10 @@ public final class AutoEaterProcess implements IBaritoneProcess {
             return new PathingCommand(null, PathingCommandType.DEFER);
         }
 
-        // Detect eating completion: player was using item and stopped
-        boolean usingItem = ctx.player().isUsingItem();
-        if (wasUsingItem && !usingItem) {
-            state = State.FINISHING;
-            ticksInState = 0;
-            baritone.getInputOverrideHandler().setInputForceState(Input.CLICK_RIGHT, false);
-            return new PathingCommand(null, PathingCommandType.DEFER);
+        // Re-confirm the selected slot hasn't been changed by Baritone
+        if (ctx.player().getInventory().getSelectedSlot() != foodSlot) {
+            ctx.player().getInventory().setSelectedSlot(foodSlot);
         }
-        wasUsingItem = usingItem;
 
         // Verify held item is still food (stack may have been consumed)
         ItemStack held = ctx.player().getInventory().getItem(foodSlot);
@@ -140,8 +143,20 @@ public final class AutoEaterProcess implements IBaritoneProcess {
             return new PathingCommand(null, PathingCommandType.DEFER);
         }
 
-        // Force right-click to eat
+        // Force right-click to eat — set early to minimize input gaps
         baritone.getInputOverrideHandler().setInputForceState(Input.CLICK_RIGHT, true);
+
+        // Detect eating completion: player was using item and stopped.
+        // Only check after MIN_EAT_TICKS to avoid false triggers from brief
+        // input interruptions (e.g. Baritone clearing overrides between ticks).
+        boolean usingItem = ctx.player().isUsingItem();
+        if (ticksInState > MIN_EAT_TICKS && wasUsingItem && !usingItem) {
+            state = State.FINISHING;
+            ticksInState = 0;
+            baritone.getInputOverrideHandler().setInputForceState(Input.CLICK_RIGHT, false);
+            return new PathingCommand(null, PathingCommandType.DEFER);
+        }
+        wasUsingItem = usingItem;
 
         // Re-evaluate pause decision periodically
         if (ticksInState % PAUSE_REEVALUATE_INTERVAL == 0) {
@@ -166,6 +181,7 @@ public final class AutoEaterProcess implements IBaritoneProcess {
         if (previousSlot >= 0 && previousSlot <= 8) {
             ctx.player().getInventory().setSelectedSlot(previousSlot);
         }
+        cooldownTicks = COOLDOWN_TICKS;
         resetState();
         return new PathingCommand(null, PathingCommandType.DEFER);
     }
@@ -175,6 +191,7 @@ public final class AutoEaterProcess implements IBaritoneProcess {
         if (previousSlot >= 0 && previousSlot <= 8) {
             ctx.player().getInventory().setSelectedSlot(previousSlot);
         }
+        cooldownTicks = COOLDOWN_TICKS;
         resetState();
     }
 
@@ -262,6 +279,7 @@ public final class AutoEaterProcess implements IBaritoneProcess {
             ctx.player().getInventory().setSelectedSlot(previousSlot);
         }
         resetState();
+        cooldownTicks = 0;
         warned = false;
     }
 

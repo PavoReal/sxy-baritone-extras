@@ -23,6 +23,7 @@ import net.minecraft.world.phys.Vec3;
 import sxy.baritoneextras.roomlighter.PlacementTarget;
 
 import sxy.baritoneextras.BaritoneExtras;
+import sxy.baritoneextras.roomlighter.RoomLighterProcess;
 
 import java.util.Optional;
 
@@ -65,6 +66,11 @@ public final class TorchPlacerProcess implements IBaritoneProcess {
         if (!config.enabled) {
             warned = false;
             resetState();
+            return false;
+        }
+        // Suppress while room lighter is running to avoid conflicting placements
+        RoomLighterProcess roomLighter = BaritoneExtras.getRoomLighterProcess();
+        if (roomLighter != null && roomLighter.isActive()) {
             return false;
         }
         if (state != State.IDLE) {

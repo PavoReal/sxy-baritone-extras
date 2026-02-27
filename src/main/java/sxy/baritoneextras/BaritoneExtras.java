@@ -27,6 +27,7 @@ public class BaritoneExtras implements ClientModInitializer {
     private static AutoEaterConfig autoEaterConfig;
     private static MobAvoidanceConfig mobAvoidanceConfig;
     private static RoomLighterConfig roomLighterConfig;
+    private static RoomLighterProcess roomLighterProcess;
 
     public static GeneralConfig getGeneralConfig() {
         return generalConfig;
@@ -46,6 +47,10 @@ public class BaritoneExtras implements ClientModInitializer {
 
     public static RoomLighterConfig getRoomLighterConfig() {
         return roomLighterConfig;
+    }
+
+    public static RoomLighterProcess getRoomLighterProcess() {
+        return roomLighterProcess;
     }
 
     public static void debugLog(String msg) {
@@ -91,10 +96,10 @@ public class BaritoneExtras implements ClientModInitializer {
         MobAvoidanceCommand mobCommand = new MobAvoidanceCommand(baritone, mobAvoidanceConfig);
         baritone.getCommandManager().getRegistry().register(mobCommand);
 
-        RoomLighterProcess roomProcess = new RoomLighterProcess(baritone, roomLighterConfig);
-        baritone.getPathingControlManager().registerProcess(roomProcess);
+        roomLighterProcess = new RoomLighterProcess(baritone, roomLighterConfig);
+        baritone.getPathingControlManager().registerProcess(roomLighterProcess);
 
-        RoomLighterCommand roomCommand = new RoomLighterCommand(baritone, roomLighterConfig, roomProcess);
+        RoomLighterCommand roomCommand = new RoomLighterCommand(baritone, roomLighterConfig, roomLighterProcess);
         baritone.getCommandManager().getRegistry().register(roomCommand);
     }
 }

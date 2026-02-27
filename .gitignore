@@ -23,3 +23,6 @@ Thumbs.db
 # Runtime
 run/
 logs/
+
+# Claude
+.claude/

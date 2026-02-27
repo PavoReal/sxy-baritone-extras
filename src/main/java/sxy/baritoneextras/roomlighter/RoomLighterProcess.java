@@ -14,6 +14,7 @@ import net.minecraft.core.BlockPos;
 import net.minecraft.core.Direction;
 import net.minecraft.world.InteractionHand;
 import net.minecraft.world.item.Items;
+import net.minecraft.world.level.LightLayer;
 import net.minecraft.world.level.block.AirBlock;
 import net.minecraft.world.level.block.state.BlockState;
 import net.minecraft.world.phys.BlockHitResult;
@@ -28,6 +29,7 @@ public final class RoomLighterProcess implements IBaritoneProcess {
     private static final int AIMING_TICKS = 5;
     private static final int AIMING_TIMEOUT = 15;
     private static final int PLACING_TICKS = 5;
+    private static final int MAX_REPLANS = 3;
 
     public enum State {
         IDLE, SCANNING, PLANNING, PATHING, APPROACHING, AIMING, PLACING, DONE
@@ -47,6 +49,7 @@ public final class RoomLighterProcess implements IBaritoneProcess {
     private int currentIndex;
     private int successfulPlacements;
     private int skippedPositions;
+    private int replanCount;
 
     // Placement state
     private PlacementTarget currentTarget;
@@ -70,6 +73,7 @@ public final class RoomLighterProcess implements IBaritoneProcess {
         this.currentIndex = 0;
         this.successfulPlacements = 0;
         this.skippedPositions = 0;
+        this.replanCount = 0;
         this.scanResult = null;
         this.plannedPositions = null;
     }
@@ -179,7 +183,31 @@ public final class RoomLighterProcess implements IBaritoneProcess {
     }
 
     private PathingCommand tickPathing(boolean calcFailed) {
+        // Skip positions that are now lit (fix: account for torches placed earlier in this run)
+        while (currentIndex < plannedPositions.size()) {
+            BlockPos pos = plannedPositions.get(currentIndex);
+            if (ctx.world().getBrightness(LightLayer.BLOCK, pos) >= config.lightLevelThreshold) {
+                skippedPositions++;
+                currentIndex++;
+            } else {
+                break;
+            }
+        }
+
         if (currentIndex >= plannedPositions.size()) {
+            // Re-plan to catch dark spots missed by the theoretical model (e.g. behind walls)
+            if (replanCount < MAX_REPLANS) {
+                List<BlockPos> newPlan = TorchPlanner.plan(ctx.world(), scanResult.floorBlocks,
+                        config.lightLevelThreshold, ctx.playerFeet());
+                if (!newPlan.isEmpty()) {
+                    replanCount++;
+                    Helper.HELPER.logDirect("Re-planned " + newPlan.size()
+                            + " additional torch placements (pass " + (replanCount + 1) + ")");
+                    plannedPositions = newPlan;
+                    currentIndex = 0;
+                    return new PathingCommand(null, PathingCommandType.REQUEST_PAUSE);
+                }
+            }
             state = State.DONE;
             return new PathingCommand(null, PathingCommandType.REQUEST_PAUSE);
         }
@@ -406,6 +434,7 @@ public final class RoomLighterProcess implements IBaritoneProcess {
         currentIndex = 0;
         successfulPlacements = 0;
         skippedPositions = 0;
+        replanCount = 0;
         currentTarget = null;
         currentRot = null;
         currentTorchSlot = -1;
