@@ -12,7 +12,7 @@ public class ModMenuIntegration implements ModMenuApi {
             if (!FabricLoader.getInstance().isModLoaded("yet_another_config_lib_v3")) {
                 return null;
             }
-            return TorchPlacerConfigScreen.create(parent);
+            return ConfigScreen.create(parent);
         };
     }
 }
