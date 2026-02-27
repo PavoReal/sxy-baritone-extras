@@ -1,0 +1,83 @@
+plugins {
+    id 'fabric-loom' version '1.14-SNAPSHOT'
+    id 'maven-publish'
+}
+
+version = project.mod_version
+group = project.maven_group
+
+base {
+    archivesName = project.archives_base_name
+}
+
+repositories {
+    mavenCentral()
+    maven { url = "https://maven.parchmentmc.net/" }
+    maven { url = "https://maven.terraformersmc.com/" }
+    maven { url = "https://maven.isxander.dev/releases" }
+    flatDir { dirs 'deps' }
+}
+
+loom {
+    // Baritone API references vanilla MC types; no special access widener needed
+}
+
+dependencies {
+    minecraft "com.mojang:minecraft:${project.minecraft_version}"
+    mappings loom.layered() {
+        officialMojangMappings()
+        parchment("org.parchmentmc.data:parchment-1.21.4:2025.03.23@zip")
+    }
+
+    modImplementation "net.fabricmc:fabric-loader:${project.fabric_loader_version}"
+
+    // Baritone API jar — build baritone first, then copy dist/baritone-api-fabric-*.jar into deps/
+    modCompileOnly name: 'baritone-api-fabric', version: '+', group: ''
+
+    // Optional: Mod Menu + YACL for config screen (not bundled — users install separately)
+    modCompileOnly "com.terraformersmc:modmenu:${project.modmenu_version}"
+    modCompileOnly "dev.isxander:yet-another-config-lib:${project.yacl_version}"
+}
+
+processResources {
+    inputs.property "version", project.version
+
+    filesMatching("fabric.mod.json") {
+        expand "version": project.version
+    }
+}
+
+tasks.withType(JavaCompile).configureEach {
+    it.options.encoding = "UTF-8"
+    it.options.release = 21
+}
+
+java {
+    withSourcesJar()
+
+    sourceCompatibility = JavaVersion.VERSION_21
+    targetCompatibility = JavaVersion.VERSION_21
+}
+
+jar {
+    from("LICENSE") {
+        rename { "${it}_${project.base.archivesName.get()}" }
+    }
+}
+
+tasks.register('copyToDist', Copy) {
+    from remapJar
+    into layout.projectDirectory.dir('dist')
+}
+build.dependsOn copyToDist
+
+publishing {
+    publications {
+        create("mavenJava", MavenPublication) {
+            artifactId = project.archives_base_name
+            from components.java
+        }
+    }
+    repositories {
+    }
+}
