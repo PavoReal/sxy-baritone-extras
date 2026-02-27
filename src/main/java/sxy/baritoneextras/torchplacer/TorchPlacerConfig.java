@@ -10,6 +10,7 @@ import java.util.Properties;
 public final class TorchPlacerConfig {
 
     private static final Path CONFIG_PATH = Path.of("config", "sxy-baritone-extras.properties");
+    private static final String PREFIX = "torchplacer.";
 
     public boolean enabled = true;
     public int lightLevelThreshold = 4;
@@ -29,13 +30,17 @@ public final class TorchPlacerConfig {
             e.printStackTrace();
             return;
         }
-        enabled = Boolean.parseBoolean(props.getProperty("enabled", "true"));
-        lightLevelThreshold = parseInt(props.getProperty("lightLevelThreshold"), 4);
-        minSpacing = parseInt(props.getProperty("minSpacing"), 8);
-        safetyMargin = parseInt(props.getProperty("safetyMargin"), 2);
+        enabled = Boolean.parseBoolean(
+                getWithFallback(props, "enabled", "true"));
+        lightLevelThreshold = parseInt(
+                getWithFallback(props, "lightLevelThreshold", null), 4);
+        minSpacing = parseInt(
+                getWithFallback(props, "minSpacing", null), 8);
+        safetyMargin = parseInt(
+                getWithFallback(props, "safetyMargin", null), 2);
         try {
             placementSide = TorchPlacementSide.valueOf(
-                    props.getProperty("placementSide", "RIGHT").toUpperCase());
+                    getWithFallback(props, "placementSide", "RIGHT").toUpperCase());
         } catch (IllegalArgumentException e) {
             placementSide = TorchPlacementSide.RIGHT;
         }
@@ -51,19 +56,34 @@ public final class TorchPlacerConfig {
                 e.printStackTrace();
             }
         }
-        props.setProperty("enabled", String.valueOf(enabled));
-        props.setProperty("lightLevelThreshold", String.valueOf(lightLevelThreshold));
-        props.setProperty("placementSide", placementSide.name());
-        props.setProperty("minSpacing", String.valueOf(minSpacing));
-        props.setProperty("safetyMargin", String.valueOf(safetyMargin));
+        // Remove old un-prefixed keys for backward compat migration
+        props.remove("enabled");
+        props.remove("lightLevelThreshold");
+        props.remove("placementSide");
+        props.remove("minSpacing");
+        props.remove("safetyMargin");
+        // Write prefixed keys
+        props.setProperty(PREFIX + "enabled", String.valueOf(enabled));
+        props.setProperty(PREFIX + "lightLevelThreshold", String.valueOf(lightLevelThreshold));
+        props.setProperty(PREFIX + "placementSide", placementSide.name());
+        props.setProperty(PREFIX + "minSpacing", String.valueOf(minSpacing));
+        props.setProperty(PREFIX + "safetyMargin", String.valueOf(safetyMargin));
         try {
             Files.createDirectories(CONFIG_PATH.getParent());
             try (OutputStream out = Files.newOutputStream(CONFIG_PATH)) {
-                props.store(out, "SXY Baritone Extras Configuration");
+                props.store(out, "SXY Baritone Extras Config");
             }
         } catch (IOException e) {
             e.printStackTrace();
         }
+    }
+
+    private String getWithFallback(Properties props, String key, String defaultValue) {
+        String prefixed = props.getProperty(PREFIX + key);
+        if (prefixed != null) {
+            return prefixed;
+        }
+        return props.getProperty(key, defaultValue);
     }
 
     private static int parseInt(String value, int defaultValue) {

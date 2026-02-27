@@ -15,6 +15,7 @@ import sxy.baritoneextras.autoeater.AutoEaterConfig;
 import sxy.baritoneextras.autoeater.AutoEaterConfigScreen;
 import sxy.baritoneextras.mobavoidance.MobAvoidanceConfig;
 import sxy.baritoneextras.mobavoidance.MobAvoidanceConfigScreen;
+import sxy.baritoneextras.roomlighter.RoomLighterConfig;
 import sxy.baritoneextras.torchplacer.TorchPlacerConfig;
 
 public class ModMenuIntegration implements ModMenuApi {
@@ -57,16 +58,19 @@ public class ModMenuIntegration implements ModMenuApi {
             TorchPlacerConfig torchConfig = BaritoneExtras.getConfig();
             AutoEaterConfig eaterConfig = BaritoneExtras.getAutoEaterConfig();
             MobAvoidanceConfig mobConfig = BaritoneExtras.getMobAvoidanceConfig();
+            RoomLighterConfig roomConfig = BaritoneExtras.getRoomLighterConfig();
 
             return YetAnotherConfigLib.createBuilder()
                     .title(Component.literal("SXY Baritone Extras Configuration"))
                     .category(createGeneralCategory(generalConfig))
                     .category(TorchPlacerConfigScreen.createCategory(torchConfig))
+                    .category(TorchPlacerConfigScreen.createRoomLighterCategory(roomConfig))
                     .category(AutoEaterConfigScreen.createCategory(eaterConfig))
                     .category(MobAvoidanceConfigScreen.createCategory(mobConfig))
                     .save(() -> {
                         generalConfig.save();
                         torchConfig.save();
+                        roomConfig.save();
                         eaterConfig.save();
                         mobConfig.save();
                     })

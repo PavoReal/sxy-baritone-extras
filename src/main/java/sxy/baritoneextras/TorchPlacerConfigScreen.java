@@ -9,6 +9,7 @@ import dev.isxander.yacl3.api.controller.IntegerSliderControllerBuilder;
 import dev.isxander.yacl3.api.controller.TickBoxControllerBuilder;
 import net.minecraft.client.gui.screens.Screen;
 import net.minecraft.network.chat.Component;
+import sxy.baritoneextras.roomlighter.RoomLighterConfig;
 import sxy.baritoneextras.torchplacer.TorchPlacementSide;
 import sxy.baritoneextras.torchplacer.TorchPlacerConfig;
 
@@ -80,13 +81,59 @@ public final class TorchPlacerConfigScreen {
                 .build();
     }
 
+    public static ConfigCategory createRoomLighterCategory(RoomLighterConfig roomConfig) {
+        return ConfigCategory.createBuilder()
+                .name(Component.literal("Room Lighter"))
+                .tooltip(Component.literal("On-demand room lighting settings"))
+
+                .option(Option.<Integer>createBuilder()
+                        .name(Component.literal("Light Level Threshold"))
+                        .description(OptionDescription.of(
+                                Component.literal("Target light level for the room")))
+                        .binding(7, () -> roomConfig.lightLevelThreshold,
+                                val -> roomConfig.lightLevelThreshold = val)
+                        .controller(opt -> IntegerSliderControllerBuilder.create(opt)
+                                .range(0, 15)
+                                .step(1))
+                        .build())
+
+                .option(Option.<Integer>createBuilder()
+                        .name(Component.literal("Max Scan Radius"))
+                        .description(OptionDescription.of(
+                                Component.literal("Maximum distance to scan from the player")))
+                        .binding(32, () -> roomConfig.maxRadius,
+                                val -> roomConfig.maxRadius = val)
+                        .controller(opt -> IntegerSliderControllerBuilder.create(opt)
+                                .range(8, 64)
+                                .step(1))
+                        .build())
+
+                .option(Option.<Integer>createBuilder()
+                        .name(Component.literal("Max Scan Volume"))
+                        .description(OptionDescription.of(
+                                Component.literal("Maximum number of blocks to scan")))
+                        .binding(10000, () -> roomConfig.maxVolume,
+                                val -> roomConfig.maxVolume = val)
+                        .controller(opt -> IntegerSliderControllerBuilder.create(opt)
+                                .range(1000, 50000)
+                                .step(1000))
+                        .build())
+
+                .build();
+    }
+
     public static Screen create(Screen parent) {
         TorchPlacerConfig config = BaritoneExtras.getConfig();
+        RoomLighterConfig roomConfig = BaritoneExtras.getRoomLighterConfig();
 
         return YetAnotherConfigLib.createBuilder()
-                .title(Component.literal("Torch Placer Configuration"))
+                .title(Component.literal("SXY Baritone Extras Configuration"))
                 .category(createCategory(config))
-                .save(config::save)
+                .category(createRoomLighterCategory(roomConfig))
+                .save(() -> {
+                    config.save();
+                    roomConfig.save();
+                })
                 .build()
                 .generateScreen(parent);
     }

@@ -11,6 +11,9 @@ import sxy.baritoneextras.autoeater.AutoEaterProcess;
 import sxy.baritoneextras.mobavoidance.MobAvoidanceCommand;
 import sxy.baritoneextras.mobavoidance.MobAvoidanceConfig;
 import sxy.baritoneextras.mobavoidance.MobAvoidanceProcess;
+import sxy.baritoneextras.roomlighter.RoomLighterCommand;
+import sxy.baritoneextras.roomlighter.RoomLighterConfig;
+import sxy.baritoneextras.roomlighter.RoomLighterProcess;
 import sxy.baritoneextras.torchplacer.TorchPlacerCommand;
 import sxy.baritoneextras.torchplacer.TorchPlacerConfig;
 import sxy.baritoneextras.torchplacer.TorchPlacerProcess;
@@ -23,6 +26,7 @@ public class BaritoneExtras implements ClientModInitializer {
     private static TorchPlacerConfig torchPlacerConfig;
     private static AutoEaterConfig autoEaterConfig;
     private static MobAvoidanceConfig mobAvoidanceConfig;
+    private static RoomLighterConfig roomLighterConfig;
 
     public static GeneralConfig getGeneralConfig() {
         return generalConfig;
@@ -38,6 +42,10 @@ public class BaritoneExtras implements ClientModInitializer {
 
     public static MobAvoidanceConfig getMobAvoidanceConfig() {
         return mobAvoidanceConfig;
+    }
+
+    public static RoomLighterConfig getRoomLighterConfig() {
+        return roomLighterConfig;
     }
 
     public static void debugLog(String msg) {
@@ -60,6 +68,9 @@ public class BaritoneExtras implements ClientModInitializer {
         mobAvoidanceConfig = new MobAvoidanceConfig();
         mobAvoidanceConfig.load();
 
+        roomLighterConfig = new RoomLighterConfig();
+        roomLighterConfig.load();
+
         IBaritone baritone = BaritoneAPI.getProvider().getPrimaryBaritone();
 
         TorchPlacerProcess torchProcess = new TorchPlacerProcess(baritone, torchPlacerConfig);
@@ -79,5 +90,11 @@ public class BaritoneExtras implements ClientModInitializer {
 
         MobAvoidanceCommand mobCommand = new MobAvoidanceCommand(baritone, mobAvoidanceConfig);
         baritone.getCommandManager().getRegistry().register(mobCommand);
+
+        RoomLighterProcess roomProcess = new RoomLighterProcess(baritone, roomLighterConfig);
+        baritone.getPathingControlManager().registerProcess(roomProcess);
+
+        RoomLighterCommand roomCommand = new RoomLighterCommand(baritone, roomLighterConfig, roomProcess);
+        baritone.getCommandManager().getRegistry().register(roomCommand);
     }
 }
