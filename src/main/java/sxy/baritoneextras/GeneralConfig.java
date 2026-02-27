@@ -11,7 +11,7 @@ public final class GeneralConfig {
 
     private static final Path CONFIG_PATH = Path.of("config", "sxy-baritone-extras-general.properties");
 
-    public boolean debugEnabled = true;
+    public boolean debugEnabled = false;
 
     public void load() {
         if (!Files.exists(CONFIG_PATH)) {
@@ -25,7 +25,7 @@ public final class GeneralConfig {
             e.printStackTrace();
             return;
         }
-        debugEnabled = Boolean.parseBoolean(props.getProperty("debugEnabled", "true"));
+        debugEnabled = Boolean.parseBoolean(props.getProperty("debugEnabled", "false"));
     }
 
     public void save() {

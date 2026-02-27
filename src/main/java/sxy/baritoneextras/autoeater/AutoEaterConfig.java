@@ -12,7 +12,7 @@ public final class AutoEaterConfig {
     private static final Path CONFIG_PATH = Path.of("config", "sxy-baritone-extras.properties");
     private static final String PREFIX = "autoeater.";
 
-    public boolean enabled = true;
+    public boolean enabled = false;
     public int hungerThreshold = 20;
     public FoodPriority foodPriority = FoodPriority.SATURATION;
     public boolean allowGoldenApples = false;
@@ -30,7 +30,7 @@ public final class AutoEaterConfig {
             e.printStackTrace();
             return;
         }
-        enabled = Boolean.parseBoolean(props.getProperty(PREFIX + "enabled", "true"));
+        enabled = Boolean.parseBoolean(props.getProperty(PREFIX + "enabled", "false"));
         hungerThreshold = parseInt(props.getProperty(PREFIX + "hungerThreshold"), 20);
         allowGoldenApples = Boolean.parseBoolean(props.getProperty(PREFIX + "allowGoldenApples", "false"));
         eatWhileWalking = Boolean.parseBoolean(props.getProperty(PREFIX + "eatWhileWalking", "true"));

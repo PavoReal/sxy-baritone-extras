@@ -6,14 +6,60 @@ A client-side [Fabric](https://fabricmc.net/) mod that extends [Baritone](https:
 
 ## Features
 
-| Feature | Command | Description |
-|---|---|---|
-| **Torch Placer** | `#torchplacer` | Auto-places torches while pathfinding through dark areas. Adjusts spacing based on corridor width. Supports floor and wall placement. |
-| **Auto Eater** | `#autoeater` | Eats food automatically when hunger drops below a threshold. Selects best food by saturation, nutrition, or availability. |
-| **Mob Avoidance** | `#mobavoid` | Detects hostile mobs and responds — flees from creepers, seeks cover from skeletons, engages weaker mobs in combat. |
-| **Room Lighter** | `#lightroom` | Scans the room around you, plans optimal torch positions, and places them. Supports dry-run scanning. |
+### Torch Placer — `#torchplacer`
 
-Every feature can be toggled with its base command (e.g. `#torchplacer`) and configured with subcommands. Run `#<command> status` to see current settings.
+Auto-places torches while Baritone is pathfinding through dark areas. Dynamically adjusts spacing based on corridor width. Supports floor and wall (left/right) placement.
+
+| Subcommand | Description |
+|---|---|
+| `#torchplacer` | Toggle on/off |
+| `#torchplacer side <floor\|left\|right>` | Placement surface relative to movement direction |
+| `#torchplacer spacing <n>` | Minimum blocks between torches |
+| `#torchplacer threshold <n>` | Light level below which torches are placed |
+| `#torchplacer margin <n>` | Safety margin subtracted from computed spacing |
+| `#torchplacer status` | Show current settings |
+
+### Auto Eater — `#autoeater`
+
+Eats food automatically when hunger drops below a threshold. Picks the best food by saturation, nutrition, or first available. Pauses pathing on tricky terrain.
+
+| Subcommand | Description |
+|---|---|
+| `#autoeater` | Toggle on/off |
+| `#autoeater threshold <1-20>` | Hunger level that triggers eating |
+| `#autoeater priority <saturation\|nutrition\|any>` | Food selection strategy |
+| `#autoeater goldenapples` | Toggle golden apple usage |
+| `#autoeater walking` | Toggle eating while walking |
+| `#autoeater status` | Show current settings |
+
+### Mob Avoidance — `#mobavoid`
+
+Detects hostile mobs and responds per threat type — flees from creepers/witches, seeks cover from skeletons/pillagers, engages zombies/spiders in melee. Disabled by default.
+
+| Subcommand | Description |
+|---|---|
+| `#mobavoid` | Toggle on/off |
+| `#mobavoid radius <n>` | Mob scan radius in blocks |
+| `#mobavoid safe <n>` | Flee distance before resuming |
+| `#mobavoid health <n>` | Health (half-hearts) to force retreat |
+| `#mobavoid combat [on\|off]` | Toggle melee engagement |
+| `#mobavoid maxmobs <n>` | Max mobs before fleeing instead of fighting |
+| `#mobavoid status` | Show current settings |
+
+### Room Lighter — `#lightroom`
+
+Scans the room around you with BFS flood-fill, plans optimal torch positions using a greedy set-cover algorithm, then walks to each spot and places torches. Supports dry-run scanning.
+
+| Subcommand | Description |
+|---|---|
+| `#lightroom` | Start lighting the room |
+| `#lightroom stop` | Cancel and report progress |
+| `#lightroom scan` | Dry run — report how many torches are needed |
+| `#lightroom threshold <n>` | Light level below which spots need torches |
+| `#lightroom radius <n>` | Maximum scan radius |
+| `#lightroom status` | Show current state and settings |
+
+> Every feature can be toggled with its base command and configured via subcommands. Run `#<command> status` to see current settings.
 
 ## Installation
 
@@ -40,4 +86,4 @@ Output: `dist/sxy-baritone-extras-1.0.0.jar`
 
 ## License
 
-[LGPL-3.0](https://www.gnu.org/licenses/lgpl-3.0.html)
+TBD

@@ -12,7 +12,7 @@ public final class TorchPlacerConfig {
     private static final Path CONFIG_PATH = Path.of("config", "sxy-baritone-extras.properties");
     private static final String PREFIX = "torchplacer.";
 
-    public boolean enabled = true;
+    public boolean enabled = false;
     public int lightLevelThreshold = 4;
     public TorchPlacementSide placementSide = TorchPlacementSide.RIGHT;
     public int minSpacing = 8;
@@ -31,7 +31,7 @@ public final class TorchPlacerConfig {
             return;
         }
         enabled = Boolean.parseBoolean(
-                getWithFallback(props, "enabled", "true"));
+                getWithFallback(props, "enabled", "false"));
         lightLevelThreshold = parseInt(
                 getWithFallback(props, "lightLevelThreshold", null), 4);
         minSpacing = parseInt(
