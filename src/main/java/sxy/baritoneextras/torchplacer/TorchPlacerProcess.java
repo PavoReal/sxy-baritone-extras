@@ -20,6 +20,7 @@ import net.minecraft.world.level.block.AirBlock;
 import net.minecraft.world.level.block.state.BlockState;
 import net.minecraft.world.phys.BlockHitResult;
 import net.minecraft.world.phys.Vec3;
+import sxy.baritoneextras.roomlighter.PlacementTarget;
 
 import java.util.Optional;
 
@@ -448,15 +449,4 @@ public final class TorchPlacerProcess implements IBaritoneProcess {
         return 4;
     }
 
-    private static class PlacementTarget {
-        final BlockPos against;
-        final Direction face;
-        final Vec3 hitVec;
-
-        PlacementTarget(BlockPos against, Direction face, Vec3 hitVec) {
-            this.against = against;
-            this.face = face;
-            this.hitVec = hitVec;
-        }
-    }
 }

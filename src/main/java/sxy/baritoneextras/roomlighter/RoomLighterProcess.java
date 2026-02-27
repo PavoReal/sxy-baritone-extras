@@ -1,0 +1,434 @@
+package sxy.baritoneextras.roomlighter;
+
+import baritone.api.IBaritone;
+import baritone.api.pathing.goals.GoalNear;
+import baritone.api.process.IBaritoneProcess;
+import baritone.api.process.PathingCommand;
+import baritone.api.process.PathingCommandType;
+import baritone.api.utils.Helper;
+import baritone.api.utils.IPlayerContext;
+import baritone.api.utils.Rotation;
+import baritone.api.utils.RotationUtils;
+import baritone.api.utils.input.Input;
+import net.minecraft.core.BlockPos;
+import net.minecraft.core.Direction;
+import net.minecraft.world.InteractionHand;
+import net.minecraft.world.item.Items;
+import net.minecraft.world.level.block.AirBlock;
+import net.minecraft.world.level.block.state.BlockState;
+import net.minecraft.world.phys.BlockHitResult;
+import net.minecraft.world.phys.Vec3;
+
+import java.util.List;
+import java.util.Optional;
+
+public final class RoomLighterProcess implements IBaritoneProcess {
+
+    private static final int OFFHAND_SLOT = -2;
+    private static final int AIMING_TICKS = 5;
+    private static final int AIMING_TIMEOUT = 15;
+    private static final int PLACING_TICKS = 5;
+
+    public enum State {
+        IDLE, SCANNING, PLANNING, PATHING, APPROACHING, AIMING, PLACING, DONE
+    }
+
+    private final IBaritone baritone;
+    private final IPlayerContext ctx;
+    private final RoomLighterConfig config;
+
+    private State state = State.IDLE;
+    private int ticksInState;
+    private boolean dryRun;
+
+    // Scan/plan results
+    private RoomScanResult scanResult;
+    private List<BlockPos> plannedPositions;
+    private int currentIndex;
+    private int successfulPlacements;
+    private int skippedPositions;
+
+    // Placement state
+    private PlacementTarget currentTarget;
+    private Rotation currentRot;
+    private int currentTorchSlot;
+
+    public RoomLighterProcess(IBaritone baritone, RoomLighterConfig config) {
+        this.baritone = baritone;
+        this.ctx = baritone.getPlayerContext();
+        this.config = config;
+    }
+
+    public void start(boolean dryRun) {
+        if (state != State.IDLE) {
+            Helper.HELPER.logDirect("Room lighter is already running. Use #lightroom stop first.");
+            return;
+        }
+        this.dryRun = dryRun;
+        this.state = State.SCANNING;
+        this.ticksInState = 0;
+        this.currentIndex = 0;
+        this.successfulPlacements = 0;
+        this.skippedPositions = 0;
+        this.scanResult = null;
+        this.plannedPositions = null;
+    }
+
+    public void stop() {
+        if (state == State.IDLE) {
+            Helper.HELPER.logDirect("Room lighter is not running.");
+            return;
+        }
+        Helper.HELPER.logDirect("Room lighter stopped. Placed " + successfulPlacements + " torches.");
+        baritone.getInputOverrideHandler().clearAllKeys();
+        resetState();
+    }
+
+    public State getState() {
+        return state;
+    }
+
+    public int getRemaining() {
+        return plannedPositions == null ? 0 : plannedPositions.size() - currentIndex;
+    }
+
+    public int getTotalPlanned() {
+        return plannedPositions == null ? 0 : plannedPositions.size();
+    }
+
+    public int getSuccessful() {
+        return successfulPlacements;
+    }
+
+    @Override
+    public boolean isActive() {
+        if (ctx.player() == null || ctx.world() == null) {
+            return false;
+        }
+        return state != State.IDLE;
+    }
+
+    @Override
+    public PathingCommand onTick(boolean calcFailed, boolean isSafeToCancel) {
+        if (state != State.PLACING) {
+            baritone.getInputOverrideHandler().setInputForceState(Input.CLICK_RIGHT, false);
+        }
+
+        switch (state) {
+            case SCANNING:
+                return tickScanning();
+            case PLANNING:
+                return tickPlanning();
+            case PATHING:
+                return tickPathing(calcFailed);
+            case APPROACHING:
+                return tickApproaching(calcFailed);
+            case AIMING:
+                return tickAiming();
+            case PLACING:
+                return tickPlacing();
+            case DONE:
+                return tickDone();
+            default:
+                resetState();
+                return new PathingCommand(null, PathingCommandType.DEFER);
+        }
+    }
+
+    private PathingCommand tickScanning() {
+        BlockPos feet = ctx.playerFeet();
+        scanResult = RoomScanner.scan(ctx.world(), feet, config.maxRadius, config.maxVolume);
+
+        Helper.HELPER.logDirect("Room scan: " + scanResult.airBlocks.size() + " air blocks, "
+                + scanResult.floorBlocks.size() + " floor blocks");
+        if (scanResult.cappedByRadius) {
+            Helper.HELPER.logDirect("Warning: Scan reached max radius (" + config.maxRadius + ")");
+        }
+        if (scanResult.cappedByVolume) {
+            Helper.HELPER.logDirect("Warning: Scan reached max volume (" + config.maxVolume + ")");
+        }
+
+        state = State.PLANNING;
+        ticksInState = 0;
+        return new PathingCommand(null, PathingCommandType.REQUEST_PAUSE);
+    }
+
+    private PathingCommand tickPlanning() {
+        BlockPos feet = ctx.playerFeet();
+        plannedPositions = TorchPlanner.plan(ctx.world(), scanResult.floorBlocks,
+                config.lightLevelThreshold, feet);
+
+        if (plannedPositions.isEmpty()) {
+            Helper.HELPER.logDirect("Room is already fully lit!");
+            state = State.DONE;
+            return new PathingCommand(null, PathingCommandType.REQUEST_PAUSE);
+        }
+
+        Helper.HELPER.logDirect("Planned " + plannedPositions.size() + " torch placements");
+
+        if (dryRun) {
+            Helper.HELPER.logDirect("Dry run complete. Use #lightroom to execute.");
+            state = State.DONE;
+            return new PathingCommand(null, PathingCommandType.REQUEST_PAUSE);
+        }
+
+        state = State.PATHING;
+        ticksInState = 0;
+        currentIndex = 0;
+        return new PathingCommand(null, PathingCommandType.REQUEST_PAUSE);
+    }
+
+    private PathingCommand tickPathing(boolean calcFailed) {
+        if (currentIndex >= plannedPositions.size()) {
+            state = State.DONE;
+            return new PathingCommand(null, PathingCommandType.REQUEST_PAUSE);
+        }
+
+        // Check torch availability
+        int torchSlot = findTorchSlot();
+        if (torchSlot == -1) {
+            Helper.HELPER.logDirect("Out of torches! Placed " + successfulPlacements
+                    + "/" + plannedPositions.size());
+            state = State.DONE;
+            return new PathingCommand(null, PathingCommandType.REQUEST_PAUSE);
+        }
+
+        BlockPos target = plannedPositions.get(currentIndex);
+        BlockPos against = target.below();
+        Vec3 hitVec = new Vec3(against.getX() + 0.5, against.getY() + 1.0, against.getZ() + 0.5);
+
+        // Check if already within reach
+        double blockReachDistance = ctx.playerController().getBlockReachDistance();
+        Optional<Rotation> rot = RotationUtils.reachableOffset(
+                ctx, against, hitVec, blockReachDistance, false);
+        if (rot.isPresent()) {
+            currentTarget = new PlacementTarget(against, Direction.UP, hitVec);
+            currentRot = rot.get();
+            currentTorchSlot = torchSlot;
+            state = State.AIMING;
+            ticksInState = 0;
+            baritone.getLookBehavior().updateTarget(currentRot, true);
+            return new PathingCommand(null, PathingCommandType.REQUEST_PAUSE);
+        }
+
+        if (calcFailed) {
+            Helper.HELPER.logDirect("Cannot path to torch position, skipping");
+            skippedPositions++;
+            currentIndex++;
+            return new PathingCommand(null, PathingCommandType.REQUEST_PAUSE);
+        }
+
+        // Path toward the target
+        state = State.APPROACHING;
+        ticksInState = 0;
+        return new PathingCommand(
+                new GoalNear(target, 3),
+                PathingCommandType.SET_GOAL_AND_PATH
+        );
+    }
+
+    private PathingCommand tickApproaching(boolean calcFailed) {
+        BlockPos target = plannedPositions.get(currentIndex);
+        BlockPos against = target.below();
+        Vec3 hitVec = new Vec3(against.getX() + 0.5, against.getY() + 1.0, against.getZ() + 0.5);
+
+        // Check if now within reach
+        double blockReachDistance = ctx.playerController().getBlockReachDistance();
+        Optional<Rotation> rot = RotationUtils.reachableOffset(
+                ctx, against, hitVec, blockReachDistance, false);
+        if (rot.isPresent()) {
+            int torchSlot = findTorchSlot();
+            if (torchSlot == -1) {
+                Helper.HELPER.logDirect("Out of torches! Placed " + successfulPlacements
+                        + "/" + plannedPositions.size());
+                state = State.DONE;
+                return new PathingCommand(null, PathingCommandType.REQUEST_PAUSE);
+            }
+            currentTarget = new PlacementTarget(against, Direction.UP, hitVec);
+            currentRot = rot.get();
+            currentTorchSlot = torchSlot;
+            state = State.AIMING;
+            ticksInState = 0;
+            baritone.getLookBehavior().updateTarget(currentRot, true);
+            return new PathingCommand(null, PathingCommandType.REQUEST_PAUSE);
+        }
+
+        // If Baritone is still pathing, let it continue
+        if (baritone.getPathingBehavior().hasPath()) {
+            return new PathingCommand(
+                    new GoalNear(target, 3),
+                    PathingCommandType.SET_GOAL_AND_PATH
+            );
+        }
+
+        // Baritone stopped and we're not within reach — skip
+        if (calcFailed) {
+            skippedPositions++;
+            currentIndex++;
+            state = State.PATHING;
+            ticksInState = 0;
+            return new PathingCommand(null, PathingCommandType.REQUEST_PAUSE);
+        }
+
+        // Baritone may need to recalculate
+        ticksInState++;
+        if (ticksInState > 100) {
+            // Timeout waiting to approach
+            skippedPositions++;
+            currentIndex++;
+            state = State.PATHING;
+            ticksInState = 0;
+            return new PathingCommand(null, PathingCommandType.REQUEST_PAUSE);
+        }
+
+        return new PathingCommand(
+                new GoalNear(target, 3),
+                PathingCommandType.SET_GOAL_AND_PATH
+        );
+    }
+
+    private PathingCommand tickAiming() {
+        if (!isTargetValid(currentTarget)) {
+            skippedPositions++;
+            currentIndex++;
+            state = State.PATHING;
+            ticksInState = 0;
+            return new PathingCommand(null, PathingCommandType.REQUEST_PAUSE);
+        }
+
+        double blockReachDistance = ctx.playerController().getBlockReachDistance();
+        Optional<Rotation> rot = RotationUtils.reachableOffset(
+                ctx, currentTarget.against, currentTarget.hitVec, blockReachDistance, false);
+        if (!rot.isPresent()) {
+            skippedPositions++;
+            currentIndex++;
+            state = State.PATHING;
+            ticksInState = 0;
+            return new PathingCommand(null, PathingCommandType.REQUEST_PAUSE);
+        }
+        currentRot = rot.get();
+
+        baritone.getLookBehavior().updateTarget(currentRot, true);
+        ticksInState++;
+
+        if (ticksInState >= AIMING_TICKS) {
+            if (ctx.isLookingAt(currentTarget.against)
+                    && ctx.objectMouseOver() instanceof BlockHitResult
+                    && ((BlockHitResult) ctx.objectMouseOver()).getDirection() == currentTarget.face) {
+                state = State.PLACING;
+                ticksInState = 0;
+            } else if (ticksInState >= AIMING_TIMEOUT) {
+                skippedPositions++;
+                currentIndex++;
+                state = State.PATHING;
+                ticksInState = 0;
+            }
+        }
+
+        return new PathingCommand(null, PathingCommandType.REQUEST_PAUSE);
+    }
+
+    private PathingCommand tickPlacing() {
+        if (!isTargetValid(currentTarget)) {
+            skippedPositions++;
+            currentIndex++;
+            state = State.PATHING;
+            ticksInState = 0;
+            return new PathingCommand(null, PathingCommandType.REQUEST_PAUSE);
+        }
+
+        double blockReachDistance = ctx.playerController().getBlockReachDistance();
+        Optional<Rotation> rot = RotationUtils.reachableOffset(
+                ctx, currentTarget.against, currentTarget.hitVec, blockReachDistance, false);
+        if (rot.isPresent()) {
+            currentRot = rot.get();
+        }
+
+        baritone.getLookBehavior().updateTarget(currentRot, true);
+
+        if (currentTorchSlot != OFFHAND_SLOT) {
+            ctx.player().getInventory().setSelectedSlot(currentTorchSlot);
+        }
+        baritone.getInputOverrideHandler().setInputForceState(Input.CLICK_RIGHT, true);
+
+        ticksInState++;
+        if (ticksInState >= PLACING_TICKS) {
+            successfulPlacements++;
+            currentIndex++;
+            state = State.PATHING;
+            ticksInState = 0;
+        }
+
+        return new PathingCommand(null, PathingCommandType.REQUEST_PAUSE);
+    }
+
+    private PathingCommand tickDone() {
+        int total = plannedPositions == null ? 0 : plannedPositions.size();
+        if (!dryRun && total > 0) {
+            Helper.HELPER.logDirect("Room lighting complete! Placed " + successfulPlacements
+                    + "/" + total + " torches"
+                    + (skippedPositions > 0 ? " (" + skippedPositions + " skipped)" : ""));
+        }
+        resetState();
+        return new PathingCommand(null, PathingCommandType.DEFER);
+    }
+
+    private boolean isTargetValid(PlacementTarget target) {
+        if (target == null) {
+            return false;
+        }
+        BlockState floorState = ctx.world().getBlockState(target.against);
+        if (!floorState.isFaceSturdy(ctx.world(), target.against, Direction.UP)) {
+            return false;
+        }
+        BlockPos torchPos = target.against.relative(target.face);
+        return ctx.world().getBlockState(torchPos).getBlock() instanceof AirBlock;
+    }
+
+    private int findTorchSlot() {
+        if (ctx.player().getItemInHand(InteractionHand.OFF_HAND).getItem() == Items.TORCH) {
+            return OFFHAND_SLOT;
+        }
+        for (int i = 0; i < 9; i++) {
+            if (ctx.player().getInventory().getItem(i).getItem() == Items.TORCH) {
+                return i;
+            }
+        }
+        return -1;
+    }
+
+    private void resetState() {
+        state = State.IDLE;
+        ticksInState = 0;
+        dryRun = false;
+        scanResult = null;
+        plannedPositions = null;
+        currentIndex = 0;
+        successfulPlacements = 0;
+        skippedPositions = 0;
+        currentTarget = null;
+        currentRot = null;
+        currentTorchSlot = -1;
+    }
+
+    @Override
+    public void onLostControl() {
+        baritone.getInputOverrideHandler().clearAllKeys();
+        resetState();
+    }
+
+    @Override
+    public String displayName0() {
+        return "Room Lighter";
+    }
+
+    @Override
+    public boolean isTemporary() {
+        return false;
+    }
+
+    @Override
+    public double priority() {
+        return 2;
+    }
+}

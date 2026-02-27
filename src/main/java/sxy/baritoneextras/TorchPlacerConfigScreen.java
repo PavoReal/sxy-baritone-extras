@@ -9,6 +9,7 @@ import dev.isxander.yacl3.api.controller.IntegerSliderControllerBuilder;
 import dev.isxander.yacl3.api.controller.TickBoxControllerBuilder;
 import net.minecraft.client.gui.screens.Screen;
 import net.minecraft.network.chat.Component;
+import sxy.baritoneextras.roomlighter.RoomLighterConfig;
 import sxy.baritoneextras.torchplacer.TorchPlacementSide;
 import sxy.baritoneextras.torchplacer.TorchPlacerConfig;
 
@@ -20,12 +21,13 @@ public final class TorchPlacerConfigScreen {
 
     public static Screen create(Screen parent) {
         TorchPlacerConfig config = BaritoneExtras.getConfig();
+        RoomLighterConfig roomConfig = BaritoneExtras.getRoomLighterConfig();
 
         return YetAnotherConfigLib.createBuilder()
-                .title(Component.literal("Torch Placer Configuration"))
+                .title(Component.literal("SXY Baritone Extras Configuration"))
                 .category(ConfigCategory.createBuilder()
-                        .name(Component.literal("General"))
-                        .tooltip(Component.literal("Automatic torch placement settings"))
+                        .name(Component.literal("Torch Placer"))
+                        .tooltip(Component.literal("Automatic torch placement during pathing"))
 
                         .option(Option.<Boolean>createBuilder()
                                 .name(Component.literal("Enabled"))
@@ -51,7 +53,7 @@ public final class TorchPlacerConfigScreen {
                         .option(Option.<Integer>createBuilder()
                                 .name(Component.literal("Light Level Threshold"))
                                 .description(OptionDescription.of(
-                                        Component.literal("Place torches when light level is at or below this value")))
+                                        Component.literal("Place torches when light level is below this value")))
                                 .binding(4, () -> config.lightLevelThreshold,
                                         val -> config.lightLevelThreshold = val)
                                 .controller(opt -> IntegerSliderControllerBuilder.create(opt)
@@ -82,7 +84,50 @@ public final class TorchPlacerConfigScreen {
                                 .build())
 
                         .build())
-                .save(config::save)
+
+                .category(ConfigCategory.createBuilder()
+                        .name(Component.literal("Room Lighter"))
+                        .tooltip(Component.literal("On-demand room lighting settings"))
+
+                        .option(Option.<Integer>createBuilder()
+                                .name(Component.literal("Light Level Threshold"))
+                                .description(OptionDescription.of(
+                                        Component.literal("Target light level for the room")))
+                                .binding(7, () -> roomConfig.lightLevelThreshold,
+                                        val -> roomConfig.lightLevelThreshold = val)
+                                .controller(opt -> IntegerSliderControllerBuilder.create(opt)
+                                        .range(0, 15)
+                                        .step(1))
+                                .build())
+
+                        .option(Option.<Integer>createBuilder()
+                                .name(Component.literal("Max Scan Radius"))
+                                .description(OptionDescription.of(
+                                        Component.literal("Maximum distance to scan from the player")))
+                                .binding(32, () -> roomConfig.maxRadius,
+                                        val -> roomConfig.maxRadius = val)
+                                .controller(opt -> IntegerSliderControllerBuilder.create(opt)
+                                        .range(8, 64)
+                                        .step(1))
+                                .build())
+
+                        .option(Option.<Integer>createBuilder()
+                                .name(Component.literal("Max Scan Volume"))
+                                .description(OptionDescription.of(
+                                        Component.literal("Maximum number of blocks to scan")))
+                                .binding(10000, () -> roomConfig.maxVolume,
+                                        val -> roomConfig.maxVolume = val)
+                                .controller(opt -> IntegerSliderControllerBuilder.create(opt)
+                                        .range(1000, 50000)
+                                        .step(1000))
+                                .build())
+
+                        .build())
+
+                .save(() -> {
+                    config.save();
+                    roomConfig.save();
+                })
                 .build()
                 .generateScreen(parent);
     }
