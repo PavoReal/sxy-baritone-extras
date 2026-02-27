@@ -21,6 +21,8 @@ import net.minecraft.world.level.block.state.BlockState;
 import net.minecraft.world.phys.BlockHitResult;
 import net.minecraft.world.phys.Vec3;
 
+import sxy.baritoneextras.BaritoneExtras;
+
 import java.util.Optional;
 
 public final class TorchPlacerProcess implements IBaritoneProcess {
@@ -134,6 +136,10 @@ public final class TorchPlacerProcess implements IBaritoneProcess {
         state = State.AIMING;
         ticksInState = 0;
 
+        BaritoneExtras.debugLog("TorchPlacer: IDLE -> AIMING | target=" + target.against.toShortString()
+                + " face=" + target.face + " torchSlot=" + (torchSlot == OFFHAND_SLOT ? "offhand" : torchSlot)
+                + " rotation=[" + String.format("%.1f", currentRot.getYaw()) + ", " + String.format("%.1f", currentRot.getPitch()) + "]");
+
         baritone.getLookBehavior().updateTarget(currentRot, true);
         return new PathingCommand(null, PathingCommandType.REQUEST_PAUSE);
     }
@@ -162,7 +168,9 @@ public final class TorchPlacerProcess implements IBaritoneProcess {
                     && ((BlockHitResult) ctx.objectMouseOver()).getDirection() == currentTarget.face) {
                 state = State.PLACING;
                 ticksInState = 0;
+                BaritoneExtras.debugLog("TorchPlacer: AIMING -> PLACING | confirmed aim at " + currentTarget.against.toShortString());
             } else if (ticksInState >= AIMING_TIMEOUT) {
+                BaritoneExtras.debugLog("TorchPlacer: AIMING timeout -> IDLE | could not lock aim after " + AIMING_TIMEOUT + " ticks");
                 resetState();
                 return new PathingCommand(null, PathingCommandType.DEFER);
             }
@@ -203,6 +211,8 @@ public final class TorchPlacerProcess implements IBaritoneProcess {
                 lastTorchMovementIndex = -1;
                 lastTorchPathExecutor = null;
             }
+            BaritoneExtras.debugLog("TorchPlacer: Placed torch at " + lastTorchPos.toShortString()
+                    + " | effectiveSpacing=" + computeEffectiveSpacing());
             resetState();
             return new PathingCommand(null, PathingCommandType.DEFER);
         }
@@ -327,7 +337,11 @@ public final class TorchPlacerProcess implements IBaritoneProcess {
         }
 
         int calculatedSpacing = (int) (maxReach - safety - widthPenalty);
-        return Math.max(calculatedSpacing, minSpacing);
+        int effective = Math.max(calculatedSpacing, minSpacing);
+        BaritoneExtras.debugLog("TorchPlacer: computeEffectiveSpacing=" + effective
+                + " | corridorWidth=" + String.format("%.1f", widthPenalty / 0.5 + 1)
+                + " maxReach=" + maxReach + " safety=" + safety);
+        return effective;
     }
 
     private int computePathDistance(IPathExecutor executor, int fromIndex, int toIndex) {
