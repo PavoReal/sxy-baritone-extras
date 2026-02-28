@@ -16,10 +16,12 @@ import net.minecraft.world.InteractionHand;
 import net.minecraft.world.item.Items;
 import net.minecraft.world.level.LightLayer;
 import net.minecraft.world.level.block.AirBlock;
+import net.minecraft.world.level.block.TorchBlock;
 import net.minecraft.world.level.block.state.BlockState;
 import net.minecraft.world.phys.BlockHitResult;
 import net.minecraft.world.phys.Vec3;
 
+import java.util.Comparator;
 import java.util.List;
 import java.util.Optional;
 
@@ -27,9 +29,12 @@ public final class RoomLighterProcess implements IBaritoneProcess {
 
     private static final int OFFHAND_SLOT = -2;
     private static final int AIMING_TICKS = 5;
-    private static final int AIMING_TIMEOUT = 15;
+    private static final int AIMING_TIMEOUT = 30;
     private static final int PLACING_TICKS = 5;
     private static final int MAX_REPLANS = 3;
+    private static final int APPROACH_TIMEOUT = 80;
+    private static final int STUCK_TICKS = 20;
+    private static final int APPROACH_GOAL_RADIUS = 4;
 
     public enum State {
         IDLE, SCANNING, PLANNING, PATHING, APPROACHING, AIMING, PLACING, DONE
@@ -55,6 +60,12 @@ public final class RoomLighterProcess implements IBaritoneProcess {
     private PlacementTarget currentTarget;
     private Rotation currentRot;
     private int currentTorchSlot;
+
+    // Approaching state: stuck detection and path re-issue throttle
+    private BlockPos lastPlayerPos;
+    private int ticksSinceLastMove;
+    private boolean goalIssued;
+    private int calcFailCount;
 
     public RoomLighterProcess(IBaritone baritone, RoomLighterConfig config) {
         this.baritone = baritone;
@@ -183,7 +194,7 @@ public final class RoomLighterProcess implements IBaritoneProcess {
     }
 
     private PathingCommand tickPathing(boolean calcFailed) {
-        // Skip positions that are now lit (fix: account for torches placed earlier in this run)
+        // Skip positions that are now lit (torches placed earlier in this run)
         while (currentIndex < plannedPositions.size()) {
             BlockPos pos = plannedPositions.get(currentIndex);
             if (ctx.world().getBrightness(LightLayer.BLOCK, pos) >= config.lightLevelThreshold) {
@@ -210,6 +221,13 @@ public final class RoomLighterProcess implements IBaritoneProcess {
             }
             state = State.DONE;
             return new PathingCommand(null, PathingCommandType.REQUEST_PAUSE);
+        }
+
+        // Re-sort remaining positions by distance from current player position to prevent zigzag
+        if (currentIndex < plannedPositions.size() - 1) {
+            BlockPos feet = ctx.playerFeet();
+            List<BlockPos> remaining = plannedPositions.subList(currentIndex, plannedPositions.size());
+            remaining.sort(Comparator.comparingDouble(pos -> pos.distSqr(feet)));
         }
 
         // Check torch availability
@@ -249,8 +267,12 @@ public final class RoomLighterProcess implements IBaritoneProcess {
         // Path toward the target
         state = State.APPROACHING;
         ticksInState = 0;
+        lastPlayerPos = ctx.playerFeet();
+        ticksSinceLastMove = 0;
+        goalIssued = false;
+        calcFailCount = 0;
         return new PathingCommand(
-                new GoalNear(target, 3),
+                new GoalNear(target, APPROACH_GOAL_RADIUS),
                 PathingCommandType.SET_GOAL_AND_PATH
         );
     }
@@ -281,27 +303,43 @@ public final class RoomLighterProcess implements IBaritoneProcess {
             return new PathingCommand(null, PathingCommandType.REQUEST_PAUSE);
         }
 
+        // Track player movement for stuck detection
+        BlockPos currentFeet = ctx.playerFeet();
+        if (currentFeet.equals(lastPlayerPos)) {
+            ticksSinceLastMove++;
+        } else {
+            lastPlayerPos = currentFeet;
+            ticksSinceLastMove = 0;
+        }
+
         // If Baritone is still pathing, let it continue
         if (baritone.getPathingBehavior().hasPath()) {
+            goalIssued = true;
             return new PathingCommand(
-                    new GoalNear(target, 3),
+                    new GoalNear(target, APPROACH_GOAL_RADIUS),
                     PathingCommandType.SET_GOAL_AND_PATH
             );
         }
 
-        // Baritone stopped and we're not within reach — skip
+        // Baritone stopped pathing — check why
         if (calcFailed) {
-            skippedPositions++;
-            currentIndex++;
-            state = State.PATHING;
-            ticksInState = 0;
-            return new PathingCommand(null, PathingCommandType.REQUEST_PAUSE);
+            calcFailCount++;
+            // Allow one retry before giving up — a single recalc failure doesn't mean unreachable
+            if (calcFailCount >= 2) {
+                skippedPositions++;
+                currentIndex++;
+                state = State.PATHING;
+                ticksInState = 0;
+                return new PathingCommand(null, PathingCommandType.REQUEST_PAUSE);
+            }
+            // Retry: re-issue the goal
+            goalIssued = false;
         }
 
-        // Baritone may need to recalculate
         ticksInState++;
-        if (ticksInState > 100) {
-            // Timeout waiting to approach
+
+        // Stuck detection: if player hasn't moved in STUCK_TICKS, skip immediately
+        if (ticksSinceLastMove >= STUCK_TICKS && ticksInState > STUCK_TICKS) {
             skippedPositions++;
             currentIndex++;
             state = State.PATHING;
@@ -309,9 +347,28 @@ public final class RoomLighterProcess implements IBaritoneProcess {
             return new PathingCommand(null, PathingCommandType.REQUEST_PAUSE);
         }
 
+        // Overall timeout
+        if (ticksInState > APPROACH_TIMEOUT) {
+            skippedPositions++;
+            currentIndex++;
+            state = State.PATHING;
+            ticksInState = 0;
+            return new PathingCommand(null, PathingCommandType.REQUEST_PAUSE);
+        }
+
+        // Issue goal once, then let Baritone calculate without re-issuing every tick
+        if (!goalIssued) {
+            goalIssued = true;
+            return new PathingCommand(
+                    new GoalNear(target, APPROACH_GOAL_RADIUS),
+                    PathingCommandType.SET_GOAL_AND_PATH
+            );
+        }
+
+        // Goal already issued, wait for Baritone to calculate
         return new PathingCommand(
-                new GoalNear(target, 3),
-                PathingCommandType.SET_GOAL_AND_PATH
+                new GoalNear(target, APPROACH_GOAL_RADIUS),
+                PathingCommandType.DEFER
         );
     }
 
@@ -328,11 +385,18 @@ public final class RoomLighterProcess implements IBaritoneProcess {
         Optional<Rotation> rot = RotationUtils.reachableOffset(
                 ctx, currentTarget.against, currentTarget.hitVec, blockReachDistance, false);
         if (!rot.isPresent()) {
-            skippedPositions++;
-            currentIndex++;
-            state = State.PATHING;
+            // Reach failed — go back to APPROACHING instead of skipping entirely.
+            // The player may have drifted out of range; re-approaching is better than giving up.
+            state = State.APPROACHING;
             ticksInState = 0;
-            return new PathingCommand(null, PathingCommandType.REQUEST_PAUSE);
+            lastPlayerPos = ctx.playerFeet();
+            ticksSinceLastMove = 0;
+            goalIssued = false;
+            calcFailCount = 0;
+            return new PathingCommand(
+                    new GoalNear(plannedPositions.get(currentIndex), APPROACH_GOAL_RADIUS),
+                    PathingCommandType.SET_GOAL_AND_PATH
+            );
         }
         currentRot = rot.get();
 
@@ -340,9 +404,9 @@ public final class RoomLighterProcess implements IBaritoneProcess {
         ticksInState++;
 
         if (ticksInState >= AIMING_TICKS) {
-            if (ctx.isLookingAt(currentTarget.against)
-                    && ctx.objectMouseOver() instanceof BlockHitResult
-                    && ((BlockHitResult) ctx.objectMouseOver()).getDirection() == currentTarget.face) {
+            // Relaxed check: accept looking at the target block regardless of which face
+            // the crosshair hits. The block interaction system will handle face selection.
+            if (ctx.isLookingAt(currentTarget.against)) {
                 state = State.PLACING;
                 ticksInState = 0;
             } else if (ticksInState >= AIMING_TIMEOUT) {
@@ -381,7 +445,13 @@ public final class RoomLighterProcess implements IBaritoneProcess {
 
         ticksInState++;
         if (ticksInState >= PLACING_TICKS) {
-            successfulPlacements++;
+            // Verify torch was actually placed before counting success
+            BlockPos torchPos = currentTarget.against.relative(currentTarget.face);
+            if (ctx.world().getBlockState(torchPos).getBlock() instanceof TorchBlock) {
+                successfulPlacements++;
+            } else {
+                skippedPositions++;
+            }
             currentIndex++;
             state = State.PATHING;
             ticksInState = 0;
@@ -438,6 +508,10 @@ public final class RoomLighterProcess implements IBaritoneProcess {
         currentTarget = null;
         currentRot = null;
         currentTorchSlot = -1;
+        lastPlayerPos = null;
+        ticksSinceLastMove = 0;
+        goalIssued = false;
+        calcFailCount = 0;
     }
 
     @Override

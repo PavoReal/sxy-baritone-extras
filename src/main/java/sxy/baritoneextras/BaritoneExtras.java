@@ -8,6 +8,9 @@ import org.slf4j.LoggerFactory;
 import sxy.baritoneextras.autoeater.AutoEaterCommand;
 import sxy.baritoneextras.autoeater.AutoEaterConfig;
 import sxy.baritoneextras.autoeater.AutoEaterProcess;
+import sxy.baritoneextras.mineore.MineOreCommand;
+import sxy.baritoneextras.mineore.MineOreConfig;
+import sxy.baritoneextras.mineore.MineOreProcess;
 import sxy.baritoneextras.mobavoidance.MobAvoidanceCommand;
 import sxy.baritoneextras.mobavoidance.MobAvoidanceConfig;
 import sxy.baritoneextras.mobavoidance.MobAvoidanceProcess;
@@ -25,6 +28,7 @@ public class BaritoneExtras implements ClientModInitializer {
     private static GeneralConfig generalConfig;
     private static TorchPlacerConfig torchPlacerConfig;
     private static AutoEaterConfig autoEaterConfig;
+    private static MineOreConfig mineOreConfig;
     private static MobAvoidanceConfig mobAvoidanceConfig;
     private static RoomLighterConfig roomLighterConfig;
     private static RoomLighterProcess roomLighterProcess;
@@ -39,6 +43,10 @@ public class BaritoneExtras implements ClientModInitializer {
 
     public static AutoEaterConfig getAutoEaterConfig() {
         return autoEaterConfig;
+    }
+
+    public static MineOreConfig getMineOreConfig() {
+        return mineOreConfig;
     }
 
     public static MobAvoidanceConfig getMobAvoidanceConfig() {
@@ -70,6 +78,9 @@ public class BaritoneExtras implements ClientModInitializer {
         autoEaterConfig = new AutoEaterConfig();
         autoEaterConfig.load();
 
+        mineOreConfig = new MineOreConfig();
+        mineOreConfig.load();
+
         mobAvoidanceConfig = new MobAvoidanceConfig();
         mobAvoidanceConfig.load();
 
@@ -89,6 +100,12 @@ public class BaritoneExtras implements ClientModInitializer {
 
         AutoEaterCommand eaterCommand = new AutoEaterCommand(baritone, autoEaterConfig);
         baritone.getCommandManager().getRegistry().register(eaterCommand);
+
+        MineOreProcess mineOreProcess = new MineOreProcess(baritone, mineOreConfig);
+        baritone.getPathingControlManager().registerProcess(mineOreProcess);
+
+        MineOreCommand mineOreCommand = new MineOreCommand(baritone, mineOreConfig);
+        baritone.getCommandManager().getRegistry().register(mineOreCommand);
 
         MobAvoidanceProcess mobProcess = new MobAvoidanceProcess(baritone, mobAvoidanceConfig);
         baritone.getPathingControlManager().registerProcess(mobProcess);
