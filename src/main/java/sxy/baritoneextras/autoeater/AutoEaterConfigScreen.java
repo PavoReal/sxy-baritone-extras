@@ -31,7 +31,7 @@ public final class AutoEaterConfigScreen {
                         .name(Component.literal("Hunger Threshold"))
                         .description(OptionDescription.of(
                                 Component.literal("Start eating when hunger is below this level (20 = eat whenever not full)")))
-                        .binding(20, () -> config.hungerThreshold,
+                        .binding(14, () -> config.hungerThreshold,
                                 val -> config.hungerThreshold = val)
                         .controller(opt -> IntegerSliderControllerBuilder.create(opt)
                                 .range(1, 20)
@@ -57,15 +57,6 @@ public final class AutoEaterConfigScreen {
                                 Component.literal("Allow eating golden and enchanted golden apples")))
                         .binding(false, () -> config.allowGoldenApples,
                                 val -> config.allowGoldenApples = val)
-                        .controller(TickBoxControllerBuilder::create)
-                        .build())
-
-                .option(Option.<Boolean>createBuilder()
-                        .name(Component.literal("Eat While Walking"))
-                        .description(OptionDescription.of(
-                                Component.literal("Eat while walking on flat terrain instead of pausing")))
-                        .binding(true, () -> config.eatWhileWalking,
-                                val -> config.eatWhileWalking = val)
                         .controller(TickBoxControllerBuilder::create)
                         .build())
 

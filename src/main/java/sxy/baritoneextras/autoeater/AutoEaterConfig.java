@@ -13,10 +13,9 @@ public final class AutoEaterConfig {
     private static final String PREFIX = "autoeater.";
 
     public boolean enabled = false;
-    public int hungerThreshold = 20;
+    public int hungerThreshold = 14;
     public FoodPriority foodPriority = FoodPriority.SATURATION;
     public boolean allowGoldenApples = false;
-    public boolean eatWhileWalking = true;
 
     public void load() {
         if (!Files.exists(CONFIG_PATH)) {
@@ -31,9 +30,8 @@ public final class AutoEaterConfig {
             return;
         }
         enabled = Boolean.parseBoolean(props.getProperty(PREFIX + "enabled", "false"));
-        hungerThreshold = parseInt(props.getProperty(PREFIX + "hungerThreshold"), 20);
+        hungerThreshold = parseInt(props.getProperty(PREFIX + "hungerThreshold"), 14);
         allowGoldenApples = Boolean.parseBoolean(props.getProperty(PREFIX + "allowGoldenApples", "false"));
-        eatWhileWalking = Boolean.parseBoolean(props.getProperty(PREFIX + "eatWhileWalking", "true"));
         try {
             foodPriority = FoodPriority.valueOf(
                     props.getProperty(PREFIX + "foodPriority", "SATURATION").toUpperCase());
@@ -56,7 +54,6 @@ public final class AutoEaterConfig {
         props.setProperty(PREFIX + "hungerThreshold", String.valueOf(hungerThreshold));
         props.setProperty(PREFIX + "foodPriority", foodPriority.name());
         props.setProperty(PREFIX + "allowGoldenApples", String.valueOf(allowGoldenApples));
-        props.setProperty(PREFIX + "eatWhileWalking", String.valueOf(eatWhileWalking));
         try {
             Files.createDirectories(CONFIG_PATH.getParent());
             try (OutputStream out = Files.newOutputStream(CONFIG_PATH)) {

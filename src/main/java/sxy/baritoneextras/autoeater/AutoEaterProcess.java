@@ -1,15 +1,12 @@
 package sxy.baritoneextras.autoeater;
 
 import baritone.api.IBaritone;
-import baritone.api.behavior.IPathingBehavior;
-import baritone.api.pathing.path.IPathExecutor;
 import baritone.api.process.IBaritoneProcess;
 import baritone.api.process.PathingCommand;
 import baritone.api.process.PathingCommandType;
 import baritone.api.utils.Helper;
 import baritone.api.utils.IPlayerContext;
 import baritone.api.utils.input.Input;
-import net.minecraft.core.BlockPos;
 import net.minecraft.core.component.DataComponents;
 import net.minecraft.world.food.FoodProperties;
 import net.minecraft.world.item.ItemStack;
@@ -18,10 +15,8 @@ import net.minecraft.world.item.Items;
 public final class AutoEaterProcess implements IBaritoneProcess {
 
     private static final int EAT_TIMEOUT_TICKS = 40;
-    private static final int PAUSE_REEVALUATE_INTERVAL = 10;
-    private static final int LOOKAHEAD_MOVEMENTS = 4;
     private static final int MIN_EAT_TICKS = 10;
-    private static final int COOLDOWN_TICKS = 5;
+    private static final int COOLDOWN_TICKS = 30;
 
     private enum State { IDLE, SELECTING, EATING, FINISHING }
 
@@ -33,7 +28,6 @@ public final class AutoEaterProcess implements IBaritoneProcess {
     private int ticksInState;
     private int previousSlot = -1;
     private int foodSlot = -1;
-    private boolean pausePathing;
     private boolean wasUsingItem;
     private boolean warned;
     private int cooldownTicks;
@@ -62,9 +56,6 @@ public final class AutoEaterProcess implements IBaritoneProcess {
         // Cooldown prevents rapid re-activation after eating
         if (cooldownTicks > 0) {
             cooldownTicks--;
-            return false;
-        }
-        if (!baritone.getPathingBehavior().hasPath()) {
             return false;
         }
         if (ctx.player().getFoodData().getFoodLevel() >= config.hungerThreshold) {
@@ -101,12 +92,9 @@ public final class AutoEaterProcess implements IBaritoneProcess {
         }
         warned = false;
         foodSlot = slot;
-        pausePathing = shouldPausePathing();
         state = State.SELECTING;
         ticksInState = 0;
-        return pausePathing
-                ? new PathingCommand(null, PathingCommandType.REQUEST_PAUSE)
-                : new PathingCommand(null, PathingCommandType.DEFER);
+        return new PathingCommand(null, PathingCommandType.DEFER);
     }
 
     private PathingCommand tickSelecting() {
@@ -115,16 +103,14 @@ public final class AutoEaterProcess implements IBaritoneProcess {
         state = State.EATING;
         ticksInState = 0;
         wasUsingItem = false;
-        return pausePathing
-                ? new PathingCommand(null, PathingCommandType.REQUEST_PAUSE)
-                : new PathingCommand(null, PathingCommandType.DEFER);
+        return new PathingCommand(null, PathingCommandType.REQUEST_PAUSE);
     }
 
     private PathingCommand tickEating(boolean isSafeToCancel) {
         ticksInState++;
 
-        // Safety: if Baritone urgently needs control and we're pausing, abort
-        if (!isSafeToCancel && pausePathing) {
+        // Safety: if Baritone urgently needs control, abort eating
+        if (!isSafeToCancel) {
             abortEating();
             return new PathingCommand(null, PathingCommandType.DEFER);
         }
@@ -140,7 +126,7 @@ public final class AutoEaterProcess implements IBaritoneProcess {
             state = State.FINISHING;
             ticksInState = 0;
             baritone.getInputOverrideHandler().setInputForceState(Input.CLICK_RIGHT, false);
-            return new PathingCommand(null, PathingCommandType.DEFER);
+            return new PathingCommand(null, PathingCommandType.REQUEST_PAUSE);
         }
 
         // Force right-click to eat — set early to minimize input gaps
@@ -154,26 +140,19 @@ public final class AutoEaterProcess implements IBaritoneProcess {
             state = State.FINISHING;
             ticksInState = 0;
             baritone.getInputOverrideHandler().setInputForceState(Input.CLICK_RIGHT, false);
-            return new PathingCommand(null, PathingCommandType.DEFER);
+            return new PathingCommand(null, PathingCommandType.REQUEST_PAUSE);
         }
         wasUsingItem = usingItem;
-
-        // Re-evaluate pause decision periodically
-        if (ticksInState % PAUSE_REEVALUATE_INTERVAL == 0) {
-            pausePathing = shouldPausePathing();
-        }
 
         // Timeout safety net
         if (ticksInState >= EAT_TIMEOUT_TICKS) {
             state = State.FINISHING;
             ticksInState = 0;
             baritone.getInputOverrideHandler().setInputForceState(Input.CLICK_RIGHT, false);
-            return new PathingCommand(null, PathingCommandType.DEFER);
+            return new PathingCommand(null, PathingCommandType.REQUEST_PAUSE);
         }
 
-        return pausePathing
-                ? new PathingCommand(null, PathingCommandType.REQUEST_PAUSE)
-                : new PathingCommand(null, PathingCommandType.DEFER);
+        return new PathingCommand(null, PathingCommandType.REQUEST_PAUSE);
     }
 
     private PathingCommand tickFinishing() {
@@ -183,7 +162,7 @@ public final class AutoEaterProcess implements IBaritoneProcess {
         }
         cooldownTicks = COOLDOWN_TICKS;
         resetState();
-        return new PathingCommand(null, PathingCommandType.DEFER);
+        return new PathingCommand(null, PathingCommandType.REQUEST_PAUSE);
     }
 
     private void abortEating() {
@@ -193,26 +172,6 @@ public final class AutoEaterProcess implements IBaritoneProcess {
         }
         cooldownTicks = COOLDOWN_TICKS;
         resetState();
-    }
-
-    private boolean shouldPausePathing() {
-        if (!config.eatWhileWalking) {
-            return true;
-        }
-        IPathingBehavior pathingBehavior = baritone.getPathingBehavior();
-        IPathExecutor current = pathingBehavior.getCurrent();
-        if (current == null) {
-            return true;
-        }
-        int pos = current.getPosition();
-        var movements = current.getPath().movements();
-        for (int i = 0; i < LOOKAHEAD_MOVEMENTS && pos + i < movements.size(); i++) {
-            BlockPos dir = movements.get(pos + i).getDirection();
-            if (dir.getY() != 0) {
-                return true;
-            }
-        }
-        return false;
     }
 
     private int findBestFoodSlot() {
@@ -268,13 +227,12 @@ public final class AutoEaterProcess implements IBaritoneProcess {
         ticksInState = 0;
         previousSlot = -1;
         foodSlot = -1;
-        pausePathing = false;
         wasUsingItem = false;
     }
 
     @Override
     public void onLostControl() {
-        baritone.getInputOverrideHandler().clearAllKeys();
+        baritone.getInputOverrideHandler().setInputForceState(Input.CLICK_RIGHT, false);
         if (state != State.IDLE && previousSlot >= 0 && previousSlot <= 8) {
             ctx.player().getInventory().setSelectedSlot(previousSlot);
         }
@@ -295,6 +253,6 @@ public final class AutoEaterProcess implements IBaritoneProcess {
 
     @Override
     public double priority() {
-        return 5;
+        return 6;
     }
 }

@@ -66,24 +66,17 @@ public class AutoEaterCommand extends Command {
                 logDirect("Golden apples " + (config.allowGoldenApples ? "allowed" : "excluded"));
                 break;
             }
-            case "walking": {
-                config.eatWhileWalking = !config.eatWhileWalking;
-                config.save();
-                logDirect("Eat while walking " + (config.eatWhileWalking ? "enabled" : "disabled"));
-                break;
-            }
             case "status": {
                 logDirect("Auto Eater Status:");
                 logDirect("  Enabled: " + config.enabled);
                 logDirect("  Hunger threshold: " + config.hungerThreshold);
                 logDirect("  Food priority: " + config.foodPriority.name().toLowerCase(Locale.ROOT));
                 logDirect("  Golden apples: " + (config.allowGoldenApples ? "allowed" : "excluded"));
-                logDirect("  Eat while walking: " + config.eatWhileWalking);
                 break;
             }
             default:
                 logDirect("Unknown sub-command: " + sub);
-                logDirect("Usage: #autoeater [threshold|priority|goldenapples|walking|status]");
+                logDirect("Usage: #autoeater [threshold|priority|goldenapples|status]");
                 break;
         }
     }
@@ -91,7 +84,7 @@ public class AutoEaterCommand extends Command {
     @Override
     public Stream<String> tabComplete(String label, IArgConsumer args) {
         if (args.hasExactlyOne()) {
-            return Stream.of("threshold", "priority", "goldenapples", "walking", "status")
+            return Stream.of("threshold", "priority", "goldenapples", "status")
                     .filter(s -> s.startsWith(args.peekString().toLowerCase(Locale.ROOT)));
         }
         if (args.hasExactly(2)) {
@@ -121,7 +114,6 @@ public class AutoEaterCommand extends Command {
                 "> autoeater threshold <1-20> - set hunger threshold to start eating",
                 "> autoeater priority <saturation|nutrition|any> - set food selection priority",
                 "> autoeater goldenapples - toggle golden apple usage",
-                "> autoeater walking - toggle eating while walking",
                 "> autoeater status - show current settings"
         );
     }
